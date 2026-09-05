@@ -1,0 +1,34 @@
+<ArcGIS defaultAssembly="MCPArcGISProAddIn.dll" defaultNamespace="MCPArcGISProAddIn"
+        xmlns="http://schemas.esri.com/DADF/Registry"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://Esri.ArcGIS.Desktop.Framework.xsd">
+
+  <!--
+    V1 scope: no ribbon UI on purpose. The module auto-loads and starts the bridge
+    listener immediately -- this keeps the first version to exactly what's being
+    proven (QueuedTask.Run + IPC + opening a view), with nothing to get wrong in a
+    hand-written icon reference. Add a Start/Stop ribbon button later via VS's
+    Add-In Designer once this works -- the designer generates its own icon
+    resources, which is safer than hand-authoring image paths here.
+  -->
+  <AddInInfo id="{REPLACE-WITH-A-NEW-GUID}" version="0.1" desktopVersion="3.6.41833">
+    <Name>MCP ArcGIS Pro AddIn</Name>
+    <Description>Native C# companion to MCP-ArcGISPro. Exposes main-thread-only
+      operations (starting with opening a map/scene/globe view) that the Python
+      bridge can't reach on its own, via QueuedTask.Run.</Description>
+    <Image>Images\AddinDesktop32.png</Image>
+    <Author>Geo2004</Author>
+    <Company>Geo2004</Company>
+    <Date>09/2026</Date>
+    <Subject>Framework</Subject>
+  </AddInInfo>
+
+  <modules>
+    <insertModule id="MCPArcGISProAddIn_Module"
+                   className="Module1"
+                   autoLoad="true"
+                   caption="MCP Bridge Module">
+    </insertModule>
+  </modules>
+
+</ArcGIS>
