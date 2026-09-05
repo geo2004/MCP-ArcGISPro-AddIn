@@ -5,10 +5,10 @@
 
   <!--
     V1 scope: no ribbon UI on purpose. The module auto-loads and starts the bridge
-    listener immediately -- this keeps the first version to exactly what's being
+    listener immediately; that keeps the first version to exactly what's being
     proven (QueuedTask.Run + IPC + opening a view), with nothing to get wrong in a
     hand-written icon reference. Add a Start/Stop ribbon button later via VS's
-    Add-In Designer once this works -- the designer generates its own icon
+    Add-In Designer once this works; the designer generates its own icon
     resources, which is safer than hand-authoring image paths here.
   -->
   <AddInInfo id="{REPLACE-WITH-A-NEW-GUID}" version="0.1" desktopVersion="3.6.41833">
@@ -16,7 +16,7 @@
     <Description>Native C# companion to MCP-ArcGISPro. Exposes main-thread-only
       operations (starting with opening a map/scene/globe view) that the Python
       bridge can't reach on its own, via QueuedTask.Run.</Description>
-    <Image>Images\AddinDesktop32.png</Image>
+    <Image>Images\AddInDesktop32.png</Image>
     <Author>Geo2004</Author>
     <Company>Geo2004</Company>
     <Date>09/2026</Date>
