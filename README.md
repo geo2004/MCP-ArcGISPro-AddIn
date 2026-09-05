@@ -25,19 +25,36 @@ plain arcpy has no equivalent for.
 
 ## Status
 
-🚧 Early planning / scaffolding. Nothing functional yet.
+✅ **V1 works, live-tested.** Opening a map view on command — proven end-to-end:
+Python client → named pipe → `BridgeService` → WPF dispatcher hop → `QueuedTask.Run` →
+`OpenMapPaneAsync`. ArcGIS Pro actually opens the view. See `DEV-NOTES.md` for build
+instructions and `test_client.py` for how to try it yourself.
 
-**Planned V1 scope:** a minimal Add-in that can open a map/scene/globe view on command,
-proving the `QueuedTask.Run` + IPC mechanism end-to-end, before attempting anything
-broader (an `execute_csharp`-style escape hatch, or hosting an MCP server directly
-inside the Add-in via the [official MCP C# SDK](https://github.com/modelcontextprotocol/csharp-sdk)).
+```
+> python test_client.py ping
+{'Ok': True, 'Error': None, 'Data': 'pong'}  (36ms)
+
+> python test_client.py open_view
+{'Ok': True, 'Error': None, 'Data': "Opened view for map 'Map'."}  (1788ms)
+```
+
+**Next, not yet started:** an `execute_csharp`-style escape hatch (mirrors
+`execute_python`'s trust model on the Python side, avoids needing a recompile for every
+new main-thread-only capability), or hosting an MCP server directly inside the Add-in
+via the [official MCP C# SDK](https://github.com/modelcontextprotocol/csharp-sdk) so
+Claude could talk to it directly with no separate Python process in between.
 
 ## Requirements
 
 - ArcGIS Pro 3.x (targeting 3.6.1 — .NET 8)
 - Visual Studio 2022 17.13+
-- ArcGIS Pro SDK for .NET (Visual Studio → Extensions → Manage Extensions → search
-  "ArcGIS Pro SDK" → Install)
+- **ArcGIS Pro SDK for .NET — get the exact version matching your Pro release, not
+  whatever the Extension Manager's Install button defaults to.** The VS Marketplace
+  serves the newest SDK build (e.g. 3.7.x, which requires VS 2026) regardless of which
+  Pro version you actually have. For Pro 3.6.x specifically, download
+  `proapp-sdk-templates.vsix` from the matching tag on the
+  [SDK's GitHub releases](https://github.com/Esri/arcgis-pro-sdk/releases) (e.g.
+  `3.6.0.59527`) and install that file directly.
 
 ## Related
 

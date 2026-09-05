@@ -13,13 +13,19 @@ project files blind. So:
 2. **New Project → "ArcGIS Pro Module Add-in"** (under the ArcGIS category). Name it
    `MCPArcGISProAddIn` (matching `defaultAssembly`/`defaultNamespace` in `Config.daml`
    here — rename in `Config.daml` too if you pick a different name).
-3. **Replace** the generated `Config.daml` and `Module1.cs` with the ones in this repo.
-4. **Add** `BridgeService.cs` and `IpcModels.cs` to the project (copy the files in,
-   or add as links).
-5. Open `Config.daml` in the designer once (or just build) — accept the auto-generated
+3. Copy the generated project's **`.csproj`, `Images/`, and `DarkImages/`** into this
+   repo's folder (the generated `.csproj` explicitly requires both icon folders, not
+   just `Images/` — missing `DarkImages/` gives `MSB3030` "could not copy" warnings).
+4. **Delete** the freshly-generated `Config.daml` and `Module1.cs` — keep this repo's
+   versions (they have the actual bridge logic, not the template's defaults).
+5. `BridgeService.cs` and `IpcModels.cs` don't need any manual "Add Existing Item" step
+   — modern SDK-style `.csproj` files auto-include every `.cs` file in the folder.
+6. Open `Config.daml` in the designer once (or just build) — accept the auto-generated
    GUID it fills in for `AddInInfo id`, replacing the placeholder in this repo's copy.
-6. Build. ArcGIS Pro should auto-load the add-in next time it starts (or immediately,
-   if Pro was already running when you built — Pro's add-in reload behavior varies).
+7. Add `<Nullable>enable</Nullable>` to the copied `.csproj`'s first `<PropertyGroup>`
+   if it's not already there (avoids `CS8632` warnings on this repo's `?` annotations).
+8. Build. Restart ArcGIS Pro afterward if it was already open — add-ins load at
+   startup, not hot-reloaded while running.
 
 ## Testing
 
@@ -30,9 +36,19 @@ project files blind. So:
    `python test_client.py open_view "SomeMapName"` targets a specific map by name.
 
 If `ping` fails: check the add-in actually loaded (ArcGIS Pro → Add-In Manager, or
-just check for build errors). If `open_view` fails specifically: that's the one part
-of `BridgeService.cs` that's genuinely unverified (the WPF-dispatcher hop for
-`OpenMapPaneAsync`, see the comment in that file) — start debugging there.
+just check for build errors).
+
+**Both confirmed working, live-tested (2026-09-06):**
+```
+> python test_client.py ping
+{'Ok': True, 'Error': None, 'Data': 'pong'}  (36ms)
+
+> python test_client.py open_view
+{'Ok': True, 'Error': None, 'Data': "Opened view for map 'Map'."}  (1788ms)
+```
+The WPF-dispatcher hop for `OpenMapPaneAsync` (see the comment in `BridgeService.cs`)
+was the one piece flagged as genuinely unverified going in — it worked correctly on
+the first live try.
 
 ## Known gaps in this V1 (by design, not oversight)
 
