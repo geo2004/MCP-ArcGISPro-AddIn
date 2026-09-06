@@ -119,6 +119,31 @@ one combined architecture.
   `Microsoft.AspNetCore.App` shared framework, so those assemblies won't resolve on
   their own. See the comments there before touching it.
 
+## Building a release
+
+Build with `-p:Configuration=Release` instead of the default Debug. Signing an
+`.esriAddinX` needs the **Esri Digital Signature Wizard** (`ArcGISSignAddIn.exe` in
+the Pro `bin` folder) — it's GUI-only, no command-line flags. It needs a code-signing
+certificate already sitting in the Windows Certificate Store; a self-signed one works
+fine and doesn't require paying for a commercial certificate:
+
+```powershell
+New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Your Name" `
+  -CertStoreLocation "Cert:\CurrentUser\My" -KeyUsage DigitalSignature `
+  -FriendlyName "Your Name" -NotAfter (Get-Date).AddYears(5)
+```
+
+Then run the wizard against the built `.esriAddinX`, pick that certificate, and finish.
+Re-register the *signed* file directly afterward (`RegisterAddIn.exe <path> /s`) rather
+than rebuilding, which would silently overwrite it with an unsigned copy again.
+
+A self-signed certificate shows up in Pro's Add-In Manager as **"Untrusted"**, not
+"None" — that's expected and correct. It proves the package wasn't tampered with and
+identifies the signer, but won't show as fully trusted on any machine unless that
+machine explicitly imports the certificate into its own Trusted Publishers store. A
+paid CA-issued certificate is what removes the trust prompt everywhere by default;
+not needed for personal or small-audience use.
+
 ## Related
 
 - [MCP-ArcGISPro](https://github.com/Geo2004/MCP-ArcGISPro) — the Python bridge this
