@@ -33,7 +33,7 @@ equivalent for.
 ✅ **Live and working, 19 tools verified end-to-end (2026-09-06).** MCP is hosted
 directly inside the Add-in's own process via the official
 [C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk) — Kestrel listens on
-`http://localhost:5057/`, no separate Python process or named pipe in between anymore.
+`http://localhost:5057/`.
 
 **Project & map management:**
 `ping`, `get_status`, `open_project`, `create_project`, `save_project`,
@@ -51,8 +51,7 @@ Every tool auto-registers via `[McpServerTool]` on a plain static method in
 
 ### Trying it yourself
 
-There's no dedicated test client anymore (the old named-pipe `test_client.py` is gone
-along with the pipe itself) — talk to it as plain MCP-over-HTTP, e.g.:
+Talk to it as plain MCP-over-HTTP, e.g.:
 
 ```bash
 curl -s http://localhost:5057/ -H "Content-Type: application/json" \
