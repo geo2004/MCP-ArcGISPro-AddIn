@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37614.0 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MCPArcGISProAddIn", "MCPArcGISProAddIn.csproj", "{492212D3-1A94-1E95-533F-1C7B8EAB18DF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{492212D3-1A94-1E95-533F-1C7B8EAB18DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{492212D3-1A94-1E95-533F-1C7B8EAB18DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{492212D3-1A94-1E95-533F-1C7B8EAB18DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{492212D3-1A94-1E95-533F-1C7B8EAB18DF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2C46DF03-E77C-47F2-8A13-4095DDC73207}
+	EndGlobalSection
+EndGlobal

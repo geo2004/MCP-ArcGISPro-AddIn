@@ -4,16 +4,15 @@ using ArcGIS.Desktop.Framework.Contracts;
 namespace MCPArcGISProAddIn
 {
     /// <summary>
-    /// Add-in module. autoLoad="true" in Config.daml, so this starts the bridge
-    /// listener as soon as ArcGIS Pro loads the add-in -- no manual step, matching
-    /// V1's "just prove the mechanism works" scope. A Start/Stop ribbon button (like
-    /// MCP-ArcGISPro's MCP_Bridge.pyt toolbox has) can come later via VS's Add-In
-    /// Designer once this is confirmed working.
+    /// Add-in module. autoLoad="true" in Config.daml, so this starts the MCP host
+    /// as soon as ArcGIS Pro loads the add-in -- no manual step. A Start/Stop ribbon
+    /// button (like MCP-ArcGISPro's MCP_Bridge.pyt toolbox has) can come later via
+    /// VS's Add-In Designer once this is confirmed working.
     /// </summary>
     internal class Module1 : Module
     {
         private static Module1? _this;
-        private readonly BridgeService _bridge = new BridgeService();
+        private readonly McpHostService _bridge = new McpHostService();
 
         /// <summary>Singleton accessor -- id must match Config.daml's insertModule id.</summary>
         public static Module1 Current =>
