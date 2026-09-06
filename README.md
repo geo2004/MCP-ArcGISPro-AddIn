@@ -30,8 +30,8 @@ equivalent for.
 
 ## Status
 
-✅ **Live and working, 19 tools verified end-to-end (2026-09-06).** MCP is hosted
-directly inside the Add-in's own process via the official
+✅ **Live and working, 24 tools verified end-to-end.** MCP is hosted directly inside
+the Add-in's own process via the official
 [C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk) — Kestrel listens on
 `http://localhost:5057/`.
 
@@ -44,7 +44,12 @@ directly inside the Add-in's own process via the official
 
 **View/pane interactivity** — the part with no arcpy equivalent at all:
 `list_open_views`, `activate_view`, `close_view`, `get_view_extent`, `zoom_to_extent`,
-`zoom_in`, `zoom_out`, `select_by_extent`
+`zoom_in`, `zoom_out`, `select_by_extent`, `export_view`, `list_bookmarks`,
+`add_bookmark`, `zoom_to_bookmark`, `get_camera`
+
+`export_view` in particular is worth knowing about: it renders a view to a PNG file,
+which is the only way to actually see what's on screen in a live ArcGIS Pro
+window from outside the process.
 
 Every tool auto-registers via `[McpServerTool]` on a plain static method in
 `McpTools.cs` — no manual wiring needed to add a new one.
