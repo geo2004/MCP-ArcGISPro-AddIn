@@ -11,7 +11,7 @@
     Add-In Designer once this works; the designer generates its own icon
     resources, which is safer than hand-authoring image paths here.
   -->
-  <AddInInfo id="{REPLACE-WITH-A-NEW-GUID}" version="0.1" desktopVersion="3.6.41833">
+  <AddInInfo id="{9970C014-D1DD-4C89-B1C2-AC92F98D010C}" version="0.1" desktopVersion="3.6.41833">
     <Name>MCP ArcGIS Pro AddIn</Name>
     <Description>Native C# companion to MCP-ArcGISPro. Exposes main-thread-only
       operations (starting with opening a map/scene/globe view) that the Python

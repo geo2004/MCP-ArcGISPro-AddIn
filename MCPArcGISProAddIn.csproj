@@ -13,8 +13,18 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+    <!--
+      Pinned to 0.4.0-preview.3, NOT the newer stable 2.2.0/1.x/0.5+ releases: starting at
+      0.4.1-preview.1, this SDK's net8.0 build switched to being compiled against
+      Microsoft.Extensions.*/System.* v10.0.0.0: a hard AssemblyRef baked into the DLL's
+      own metadata (CS1705), not just a loose version range, so no amount of pinning those
+      transitive packages down can fix it. 0.4.0-preview.3 is the last version whose net8.0
+      build genuinely targets net8.0-era (8.0.1) dependencies, which is what actually
+      matters here since we're loaded as a plugin inside ArcGIS Pro's own net8.0 process
+      (see McpHostService's AssemblyLoadContext.Resolving hook for the fuller story).
+    -->
+    <PackageReference Include="ModelContextProtocol" Version="0.4.0-preview.3" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="0.4.0-preview.3" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="Config.daml" />
