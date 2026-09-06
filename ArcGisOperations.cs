@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using ArcGIS.Core.CIM;
 using ArcGIS.Core.Geometry;
 using ArcGIS.Desktop.Core;
 using ArcGIS.Desktop.Framework;
@@ -598,6 +599,149 @@ namespace MCPArcGISProAddIn
 
             return $"X={camera.X:F2}, Y={camera.Y:F2}, Z={camera.Z:F2}, Scale={camera.Scale:F0}, " +
                    $"Heading={camera.Heading:F1}, Pitch={camera.Pitch:F1}";
+        }
+
+        /// <summary>
+        /// Sets the active (or named) view's camera directly -- the write half of
+        /// GetCameraAsync, mainly useful for 3D scenes (heading/pitch are meaningless
+        /// for a flat 2D map, but harmless to set anyway).
+        /// </summary>
+        public static async Task<string> SetCameraAsync(
+            double x, double y, double? z, double? scale, double? heading, double? pitch, string mapName)
+        {
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view == null)
+                throw new InvalidOperationException("No open view found.");
+
+            // Mutate the existing camera's properties rather than construct a new one --
+            // Camera's constructor overloads are ambiguous (2D vs 3D shapes with unclear
+            // parameter order), but this is the standard Esri ProSnippets pattern for
+            // "fly to a location" and sidesteps that entirely.
+            var camera = view.Camera;
+            camera.X = x;
+            camera.Y = y;
+            if (z.HasValue) camera.Z = z.Value;
+            if (scale.HasValue) camera.Scale = scale.Value;
+            if (heading.HasValue) camera.Heading = heading.Value;
+            if (pitch.HasValue) camera.Pitch = pitch.Value;
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            // ZoomToAsync -- like the envelope/bookmark overloads already used elsewhere
+            // -- is Async-suffixed and thread-flexible, so the dispatcher is fine here too.
+            await dispatcher.InvokeAsync(() => view.ZoomToAsync(camera)).Task.Unwrap();
+
+            return $"Camera set to X={camera.X:F2}, Y={camera.Y:F2}, Z={camera.Z:F2}, " +
+                   $"Scale={camera.Scale:F0}, Heading={camera.Heading:F1}, Pitch={camera.Pitch:F1}.";
+        }
+
+        /// <summary>Inserts a new 3D scene (local or global) into the current project and opens its view.</summary>
+        public static async Task<string> InsertSceneAsync(string sceneName, bool isGlobal)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open. Call create_project first.");
+
+            if (string.IsNullOrWhiteSpace(sceneName))
+                sceneName = isGlobal ? "Global Scene" : "Scene";
+
+            var viewingMode = isGlobal ? MapViewingMode.SceneGlobal : MapViewingMode.SceneLocal;
+
+            // CreateScene's 2nd parameter is a ground-elevation-source Uri, not the
+            // viewing mode (that's 3rd) -- null uses the default ground source.
+            Map scene = await QueuedTask.Run(() => MapFactory.Instance.CreateScene(sceneName, null, viewingMode));
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            await dispatcher.InvokeAsync(() => ProApp.Panes.CreateMapPaneAsync(scene)).Task.Unwrap();
+
+            return $"Inserted and opened new {(isGlobal ? "global " : "")}scene '{scene.Name}'.";
+        }
+
+        /// <summary>Undoes the last operation on the active (or named) map -- arcpy has no concept of this at all.</summary>
+        public static async Task<string> UndoAsync(string mapName)
+        {
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view?.Map == null)
+                throw new InvalidOperationException("No open view found.");
+
+            if (!view.Map.OperationManager.CanUndo)
+                return "Nothing to undo.";
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            await dispatcher.InvokeAsync(() => view.Map.OperationManager.UndoAsync()).Task.Unwrap();
+
+            return "Undone.";
+        }
+
+        /// <summary>Redoes the last undone operation on the active (or named) map.</summary>
+        public static async Task<string> RedoAsync(string mapName)
+        {
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view?.Map == null)
+                throw new InvalidOperationException("No open view found.");
+
+            if (!view.Map.OperationManager.CanRedo)
+                return "Nothing to redo.";
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            await dispatcher.InvokeAsync(() => view.Map.OperationManager.RedoAsync()).Task.Unwrap();
+
+            return "Redone.";
+        }
+
+        /// <summary>
+        /// Shows a message box in ArcGIS Pro itself -- possible only because a live
+        /// window exists. Synchronous but creates a real WPF dialog, so per Esri's own
+        /// "handful of methods need the GUI thread" carve-out, it needs the dispatcher
+        /// despite not being Async-suffixed.
+        /// </summary>
+        public static async Task<string> ShowMessageAsync(string message, string caption)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                throw new ArgumentException("message is required.");
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            await dispatcher.InvokeAsync(() =>
+                ArcGIS.Desktop.Framework.Dialogs.MessageBox.Show(message, string.IsNullOrEmpty(caption) ? "MCP" : caption));
+
+            return "Message shown.";
+        }
+
+        /// <summary>Activates a Pro tool/command by its DAML id, e.g. "esri_mapping_exploreTool".</summary>
+        public static async Task<string> ActivateToolAsync(string toolId)
+        {
+            if (string.IsNullOrWhiteSpace(toolId))
+                throw new ArgumentException("toolId is required.");
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            // SetCurrentToolAsync returns a plain Task (not Task<bool>) -- if the id is
+            // wrong it throws or no-ops rather than reporting failure via a return value.
+            await dispatcher.InvokeAsync(() => FrameworkApplication.SetCurrentToolAsync(toolId)).Task.Unwrap();
+
+            return $"Activated tool '{toolId}'.";
+        }
+
+        /// <summary>Gets the currently active Pro tool/command's DAML id.</summary>
+        public static Task<string> GetCurrentToolAsync()
+        {
+            var toolId = FrameworkApplication.CurrentTool;
+            return Task.FromResult(string.IsNullOrEmpty(toolId) ? "No tool is active." : toolId);
         }
     }
 }

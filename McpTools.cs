@@ -205,5 +205,54 @@ namespace MCPArcGISProAddIn
             [Description("Exact map name, or empty for the active view.")]
             string mapName = "")
             => RunLogged(() => ArcGisOperations.GetCameraAsync(mapName), nameof(GetCamera));
+
+        [McpServerTool]
+        [Description("Set a view's camera directly -- the write half of get_camera. Mainly useful for 3D scenes.")]
+        public static Task<string> SetCamera(
+            double x, double y,
+            double? z = null, double? scale = null, double? heading = null, double? pitch = null,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.SetCameraAsync(x, y, z, scale, heading, pitch, mapName), nameof(SetCamera));
+
+        [McpServerTool]
+        [Description("Insert a new 3D scene into the currently open project and open its view.")]
+        public static Task<string> InsertScene(
+            [Description("Name for the new scene. Defaults to 'Scene'/'Global Scene' if left empty.")]
+            string sceneName = "",
+            [Description("True for a global (whole-earth) scene, false for a local scene.")]
+            bool isGlobal = false)
+            => RunLogged(() => ArcGisOperations.InsertSceneAsync(sceneName, isGlobal), nameof(InsertScene));
+
+        [McpServerTool]
+        [Description("Undo the last operation on a map. arcpy has no concept of this at all.")]
+        public static Task<string> Undo(
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.UndoAsync(mapName), nameof(Undo));
+
+        [McpServerTool]
+        [Description("Redo the last undone operation on a map.")]
+        public static Task<string> Redo(
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.RedoAsync(mapName), nameof(Redo));
+
+        [McpServerTool]
+        [Description("Show a message box in ArcGIS Pro itself -- only possible because a live window exists.")]
+        public static Task<string> ShowMessage(
+            string message,
+            [Description("Dialog title. Defaults to 'MCP' if left empty.")]
+            string caption = "")
+            => RunLogged(() => ArcGisOperations.ShowMessageAsync(message, caption), nameof(ShowMessage));
+
+        [McpServerTool]
+        [Description("Activate a Pro tool/command by its DAML id, e.g. 'esri_mapping_exploreTool'.")]
+        public static Task<string> ActivateTool(string toolId)
+            => RunLogged(() => ArcGisOperations.ActivateToolAsync(toolId), nameof(ActivateTool));
+
+        [McpServerTool]
+        [Description("Get the currently active Pro tool/command's DAML id.")]
+        public static Task<string> GetCurrentTool() => RunLogged(ArcGisOperations.GetCurrentToolAsync, nameof(GetCurrentTool));
     }
 }
