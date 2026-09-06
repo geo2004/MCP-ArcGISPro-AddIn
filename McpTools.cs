@@ -164,5 +164,46 @@ namespace MCPArcGISProAddIn
             [Description("Exact map name, or empty for the active view.")]
             string mapName = "")
             => RunLogged(() => ArcGisOperations.SelectByExtentAsync(xmin, ymin, xmax, ymax, mapName), nameof(SelectByExtent));
+
+        [McpServerTool]
+        [Description("Render a view to a PNG file -- the only way to actually see what's on screen.")]
+        public static Task<string> ExportView(
+            [Description("Full output path for the PNG. Empty for a timestamped temp file.")]
+            string outputPath = "",
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ExportViewAsync(outputPath, mapName), nameof(ExportView));
+
+        [McpServerTool]
+        [Description("List every bookmark in a map.")]
+        public static Task<string> ListBookmarks(
+            [Description("Exact map name, or empty for the active map.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ListBookmarksAsync(mapName), nameof(ListBookmarks));
+
+        [McpServerTool]
+        [Description("Create a bookmark from a view's current camera position.")]
+        public static Task<string> AddBookmark(
+            [Description("Name for the new bookmark.")]
+            string bookmarkName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.AddBookmarkAsync(bookmarkName, mapName), nameof(AddBookmark));
+
+        [McpServerTool]
+        [Description("Zoom a view to a named bookmark.")]
+        public static Task<string> ZoomToBookmark(
+            [Description("Exact bookmark name.")]
+            string bookmarkName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ZoomToBookmarkAsync(bookmarkName, mapName), nameof(ZoomToBookmark));
+
+        [McpServerTool]
+        [Description("Get a view's current camera: position, scale, heading, and pitch.")]
+        public static Task<string> GetCamera(
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.GetCameraAsync(mapName), nameof(GetCamera));
     }
 }

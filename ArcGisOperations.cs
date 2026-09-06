@@ -494,5 +494,110 @@ namespace MCPArcGISProAddIn
 
             return summary;
         }
+
+        /// <summary>
+        /// Renders the active (or named) view to a PNG file. Genuinely useful beyond
+        /// the "arcpy can't do this" theme: it's the only way this add-in (or anyone
+        /// driving it, e.g. Claude) can actually *see* what's on screen -- there's no
+        /// way to screenshot the live ArcGIS Pro window from outside the process.
+        /// </summary>
+        public static async Task<string> ExportViewAsync(string outputPath, string mapName)
+        {
+            if (string.IsNullOrWhiteSpace(outputPath))
+            {
+                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                outputPath = Path.Combine(Path.GetTempPath(), $"arcgispro_view_{timestamp}.png");
+            }
+            outputPath = outputPath.Replace('/', '\\');
+
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view == null)
+                throw new InvalidOperationException("No open view found to export.");
+
+            // Same CIM-affinity requirement as ZoomInFixed/SelectFeatures -- Export is
+            // synchronous too, needs QueuedTask rather than the dispatcher.
+            await QueuedTask.Run(() => view.Export(new PNGFormat { OutputFileName = outputPath }));
+
+            return $"Exported view to {outputPath}.";
+        }
+
+        /// <summary>Lists bookmarks in the current project's active (or named) map -- pure CIM read.</summary>
+        public static async Task<string> ListBookmarksAsync(string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var names = await QueuedTask.Run(() =>
+            {
+                var map = ResolveMap(mapName);
+                return map?.GetBookmarks().Select(b => b.Name).ToList();
+            });
+
+            if (names == null)
+                throw new InvalidOperationException("No map found to list bookmarks from.");
+
+            return names.Count > 0 ? string.Join(", ", names) : "No bookmarks in this map.";
+        }
+
+        /// <summary>Creates a bookmark from the active (or named) view's current camera position.</summary>
+        public static async Task<string> AddBookmarkAsync(string bookmarkName, string mapName)
+        {
+            if (string.IsNullOrWhiteSpace(bookmarkName))
+                throw new ArgumentException("bookmarkName is required.");
+
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view?.Map == null)
+                throw new InvalidOperationException("No open view found to bookmark.");
+
+            // AddBookmark lives on Map, not MapView -- it takes the view as a parameter
+            // to snapshot its current camera.
+            await QueuedTask.Run(() => view.Map.AddBookmark(view, bookmarkName));
+
+            return $"Added bookmark '{bookmarkName}'.";
+        }
+
+        /// <summary>Zooms the active (or named) view to a named bookmark.</summary>
+        public static async Task<string> ZoomToBookmarkAsync(string bookmarkName, string mapName)
+        {
+            if (string.IsNullOrWhiteSpace(bookmarkName))
+                throw new ArgumentException("bookmarkName is required.");
+
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view?.Map == null)
+                throw new InvalidOperationException("No open view found.");
+
+            // GetBookmarks() is CIM-affine like Map.AddBookmark -- needs QueuedTask, not
+            // the dispatcher, even though ZoomToAsync right after it needs the dispatcher.
+            var bookmark = await QueuedTask.Run(() =>
+                view.Map.GetBookmarks()
+                    .FirstOrDefault(b => b.Name.Equals(bookmarkName, StringComparison.OrdinalIgnoreCase)));
+
+            if (bookmark == null)
+                throw new InvalidOperationException($"No bookmark named '{bookmarkName}'.");
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            await dispatcher.InvokeAsync(() => view.ZoomToAsync(bookmark)).Task.Unwrap();
+
+            return $"Zoomed to bookmark '{bookmarkName}'.";
+        }
+
+        /// <summary>Gets the active (or named) view's current camera (position, scale, heading, pitch).</summary>
+        public static async Task<string> GetCameraAsync(string mapName)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            var camera = await dispatcher.InvokeAsync(() => ResolveMapView(mapName)?.Camera);
+
+            if (camera == null)
+                throw new InvalidOperationException("No open view found.");
+
+            return $"X={camera.X:F2}, Y={camera.Y:F2}, Z={camera.Z:F2}, Scale={camera.Scale:F0}, " +
+                   $"Heading={camera.Heading:F1}, Pitch={camera.Pitch:F1}";
+        }
     }
 }
