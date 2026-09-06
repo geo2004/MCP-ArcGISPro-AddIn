@@ -112,6 +112,24 @@ namespace MCPArcGISProAddIn
                 .WithToolsFromAssembly();
 
             _app = builder.Build();
+
+            // With logging providers cleared above, an unhandled request exception was
+            // otherwise a bare 500 with an empty body and zero trace anywhere -- log it
+            // to the same file SafeCall uses, then let it propagate so Kestrel's default
+            // behavior (500) is unchanged.
+            _app.Use(async (context, next) =>
+            {
+                try
+                {
+                    await next();
+                }
+                catch (Exception ex)
+                {
+                    LogError($"Unhandled request exception ({context.Request.Path})", ex);
+                    throw;
+                }
+            });
+
             _app.Urls.Add($"http://localhost:{Port}");
             _app.MapMcp();
 
@@ -135,7 +153,7 @@ namespace MCPArcGISProAddIn
             }
         }
 
-        private static void LogError(string what, Exception ex)
+        internal static void LogError(string what, Exception ex)
         {
             try
             {
