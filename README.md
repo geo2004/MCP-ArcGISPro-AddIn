@@ -71,8 +71,16 @@ curl -s http://localhost:5057/ -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ping","arguments":{}}}'
 ```
 
-Or point any real MCP client (Claude Desktop/Code, etc.) at `http://localhost:5057/` —
-not yet done/documented here, but that's the intended way to actually use this day to day.
+Or connect a real MCP client. For Claude Code:
+
+```bash
+claude mcp add --transport http mcp-arcgispro-addin http://localhost:5057/ -s user
+claude mcp list   # should show mcp-arcgispro-addin ... ✓ Connected
+```
+
+Takes effect in new Claude Code sessions after adding it (not the one you ran the
+command from). For Claude Desktop's own chat interface, add it through Settings →
+Connectors instead — same URL, that app doesn't read `claude mcp`'s config.
 
 **Two things worth knowing before debugging further:**
 - Every tool call's real exception (not the MCP SDK's generic "An error occurred
