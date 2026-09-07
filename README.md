@@ -30,7 +30,7 @@ equivalent for.
 
 ## Status
 
-✅ **Live and working, 42 tools verified end-to-end.** MCP is hosted directly inside
+✅ **Live and working, 58 tools verified end-to-end.** MCP is hosted directly inside
 the Add-in's own process via the official
 [C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk) — Kestrel listens on
 `http://localhost:5057/`.
@@ -53,11 +53,30 @@ the Add-in's own process via the official
 **Data editing** — via `EditOperation`, not raw cursor writes, so these participate
 in the same undo/redo stack as everything else here:
 `create_feature`, `update_feature_geometry`, `update_feature_attributes`,
-`delete_feature`, `save_edits`, `discard_edits`. Point geometry only for now.
+`delete_feature`, `save_edits`, `discard_edits`,
+`create_polyline_feature`, `create_polygon_feature`, `update_polyline_geometry`,
+`update_polygon_geometry`
+
+**The manual-edit toolbox** — the rest of `EditOperation`'s capabilities, the same
+operations a human editor uses interactively:
+`move_features`, `rotate_features`, `scale_features`, `merge_features`,
+`split_feature`, `explode_feature`, `clip_feature`, `reshape_feature`,
+`planarize_features`, `change_subtype`, `add_attachment`
 
 **Snapping, selection, and tables** — more arcpy-unreachable interactive state:
 `set_snapping`, `get_selected_features` (reads back whatever's selected, including
-selections a human made by clicking), `open_table`, `close_table`, `list_open_tables`
+selections a human made by clicking), `identify_at_point` (a read-only probe that
+doesn't disturb the current selection), `open_table`, `close_table`, `list_open_tables`
+
+**Two things worth knowing about the editing tools specifically:**
+- `move_features`/`rotate_features`/`scale_features` operate on whatever's currently
+  selected, and every feature in that selection must share the same spatial reference
+  as the pivot point — a selection spanning layers with different native SRs throws
+  `Incompatible spatial references`. Keep the selection confined to compatible layers.
+- A "success" response from an update/delete-by-object-id tool does not guarantee the
+  target object id actually existed — `EditOperation.Modify`/`Delete` on a
+  non-existent id silently no-ops rather than erroring. Verify the id is current first
+  (`get_selected_features`/`identify_at_point`) if it might be stale.
 
 `export_view` in particular is worth knowing about: it renders a view to a PNG file,
 which is the only way to actually see what's on screen in a live ArcGIS Pro
