@@ -349,5 +349,179 @@ namespace MCPArcGISProAddIn
         [McpServerTool]
         [Description("List every currently open attribute table pane.")]
         public static Task<string> ListOpenTables() => RunLogged(ArcGisOperations.ListOpenTablesAsync, nameof(ListOpenTables));
+
+        // ---- v3 batch 1: full geometry support and point identify.
+
+        [McpServerTool]
+        [Description("Create a new polyline feature from a list of vertices.")]
+        public static Task<string> CreatePolylineFeature(
+            [Description("Exact layer name to create the feature in.")]
+            string layerName,
+            [Description("JSON array of [x,y] pairs, at least 2, e.g. [[100,0],[101,1]].")]
+            string verticesJson,
+            [Description("JSON object of field values. Empty for no attributes.")]
+            string attributesJson = "",
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.CreatePolylineFeatureAsync(layerName, verticesJson, attributesJson, mapName), nameof(CreatePolylineFeature));
+
+        [McpServerTool]
+        [Description("Create a new polygon feature from a list of vertices (a closed ring).")]
+        public static Task<string> CreatePolygonFeature(
+            [Description("Exact layer name to create the feature in.")]
+            string layerName,
+            [Description("JSON array of [x,y] pairs forming a ring, e.g. [[100,0],[101,0],[101,1],[100,1]].")]
+            string verticesJson,
+            [Description("JSON object of field values. Empty for no attributes.")]
+            string attributesJson = "",
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.CreatePolygonFeatureAsync(layerName, verticesJson, attributesJson, mapName), nameof(CreatePolygonFeature));
+
+        [McpServerTool]
+        [Description("Replace a polyline feature's geometry with a new set of vertices.")]
+        public static Task<string> UpdatePolylineGeometry(
+            long objectId,
+            [Description("JSON array of [x,y] pairs, at least 2.")]
+            string verticesJson,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.UpdatePolylineGeometryAsync(objectId, verticesJson, layerName, mapName), nameof(UpdatePolylineGeometry));
+
+        [McpServerTool]
+        [Description("Replace a polygon feature's geometry with a new set of vertices (a closed ring).")]
+        public static Task<string> UpdatePolygonGeometry(
+            long objectId,
+            [Description("JSON array of [x,y] pairs forming a ring.")]
+            string verticesJson,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.UpdatePolygonGeometryAsync(objectId, verticesJson, layerName, mapName), nameof(UpdatePolygonGeometry));
+
+        [McpServerTool]
+        [Description("Probe a map location and report everything nearby, across all layers, without changing the current selection.")]
+        public static Task<string> IdentifyAtPoint(
+            double x, double y,
+            [Description("Search radius in map units around (x,y). Defaults to a small tolerance.")]
+            double tolerance = 0.001,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.IdentifyAtPointAsync(x, y, tolerance, mapName), nameof(IdentifyAtPoint));
+
+        // ---- v3 batches 2-3: the rest of EditOperation's manual-edit toolbox.
+
+        [McpServerTool]
+        [Description("Move whatever is currently selected by an offset. Select features first (e.g. select_by_extent).")]
+        public static Task<string> MoveFeatures(
+            double dx, double dy,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.MoveFeaturesAsync(dx, dy, mapName), nameof(MoveFeatures));
+
+        [McpServerTool]
+        [Description("Rotate whatever is currently selected around a pivot point, in degrees.")]
+        public static Task<string> RotateFeatures(
+            double originX, double originY, double angleDegrees,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.RotateFeaturesAsync(originX, originY, angleDegrees, mapName), nameof(RotateFeatures));
+
+        [McpServerTool]
+        [Description("Scale whatever is currently selected around a pivot point.")]
+        public static Task<string> ScaleFeatures(
+            double originX, double originY, double scaleX, double scaleY,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ScaleFeaturesAsync(originX, originY, scaleX, scaleY, mapName), nameof(ScaleFeatures));
+
+        [McpServerTool]
+        [Description("Merge every currently-selected feature in a layer into one. Select at least 2 features first.")]
+        public static Task<string> MergeFeatures(
+            [Description("Exact layer name the selected features belong to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.MergeFeaturesAsync(layerName, mapName), nameof(MergeFeatures));
+
+        [McpServerTool]
+        [Description("Split a feature into two along a cutting line.")]
+        public static Task<string> SplitFeature(
+            long objectId,
+            [Description("JSON array of [x,y] pairs describing the cutting line.")]
+            string splitLineVerticesJson,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.SplitFeatureAsync(objectId, splitLineVerticesJson, layerName, mapName), nameof(SplitFeature));
+
+        [McpServerTool]
+        [Description("Break a multipart feature into one feature per part.")]
+        public static Task<string> ExplodeFeature(
+            long objectId,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ExplodeFeatureAsync(objectId, layerName, mapName), nameof(ExplodeFeature));
+
+        [McpServerTool]
+        [Description("Clip a feature against a boundary polygon.")]
+        public static Task<string> ClipFeature(
+            long objectId,
+            [Description("JSON array of [x,y] pairs forming the clip boundary (a closed ring).")]
+            string clipPolygonVerticesJson,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ClipFeatureAsync(objectId, clipPolygonVerticesJson, layerName, mapName), nameof(ClipFeature));
+
+        [McpServerTool]
+        [Description("Reshape part of a feature's geometry using a cutting line.")]
+        public static Task<string> ReshapeFeature(
+            long objectId,
+            [Description("JSON array of [x,y] pairs describing the reshape line.")]
+            string reshapeLineVerticesJson,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ReshapeFeatureAsync(objectId, reshapeLineVerticesJson, layerName, mapName), nameof(ReshapeFeature));
+
+        [McpServerTool]
+        [Description("Resolve geometry intersections among currently-selected features (shared vertices where lines cross). Requires a Standard/Advanced license.")]
+        public static Task<string> PlanarizeFeatures(
+            [Description("Exact layer name the selected features belong to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.PlanarizeFeaturesAsync(layerName, mapName), nameof(PlanarizeFeatures));
+
+        [McpServerTool]
+        [Description("Change a feature's subtype classification code.")]
+        public static Task<string> ChangeSubtype(
+            long objectId, int newSubtypeCode,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.ChangeSubtypeAsync(objectId, newSubtypeCode, layerName, mapName), nameof(ChangeSubtype));
+
+        [McpServerTool]
+        [Description("Attach a file (photo, PDF, etc.) to an existing feature.")]
+        public static Task<string> AddAttachment(
+            long objectId,
+            [Description("Full path to the file to attach.")]
+            string filePath,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.AddAttachmentAsync(objectId, filePath, layerName, mapName), nameof(AddAttachment));
     }
 }

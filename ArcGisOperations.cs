@@ -8,6 +8,7 @@ using ArcGIS.Core.CIM;
 using ArcGIS.Core.Geometry;
 using ArcGIS.Desktop.Core;
 using ArcGIS.Desktop.Editing;
+using ArcGIS.Desktop.Editing.Attributes;
 using ArcGIS.Desktop.Framework;
 using ArcGIS.Desktop.Framework.Contracts;
 using ArcGIS.Desktop.Framework.Threading.Tasks;
@@ -783,6 +784,26 @@ namespace MCPArcGISProAddIn
                 .FirstOrDefault(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
         }
 
+        /// <summary>JSON array of [x,y] pairs, e.g. [[100,0],[101,0],[101,1]] -> MapPoint list for polyline/polygon builders.</summary>
+        private static List<MapPoint> ParseVerticesJson(string verticesJson, SpatialReference sr)
+        {
+            if (string.IsNullOrWhiteSpace(verticesJson))
+                throw new ArgumentException("verticesJson is required, e.g. [[100,0],[101,0],[101,1]].");
+
+            using var doc = JsonDocument.Parse(verticesJson);
+            var points = new List<MapPoint>();
+            foreach (var vertex in doc.RootElement.EnumerateArray())
+            {
+                var coords = vertex.EnumerateArray().ToArray();
+                points.Add(MapPointBuilderEx.CreateMapPoint(coords[0].GetDouble(), coords[1].GetDouble(), sr));
+            }
+
+            if (points.Count < 2)
+                throw new ArgumentException("verticesJson must contain at least 2 points.");
+
+            return points;
+        }
+
         /// <summary>Creates a new point feature. Polygon/polyline creation isn't supported yet.</summary>
         public static async Task<string> CreateFeatureAsync(string layerName, double x, double y, string attributesJson, string mapName)
         {
@@ -1005,6 +1026,385 @@ namespace MCPArcGISProAddIn
                     .ToList());
 
             return names.Count > 0 ? string.Join(", ", names) : "No attribute tables are currently open.";
+        }
+
+        // ---- v3 batch 1: full geometry support (create_feature/update_feature_geometry
+        // were point-only) and a point-based identify that doesn't disturb selection.
+
+        public static async Task<string> CreatePolylineFeatureAsync(string layerName, string verticesJson, string attributesJson, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var attributes = ParseAttributesJson(attributesJson);
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var sr = layer.GetSpatialReference();
+                var polyline = PolylineBuilderEx.CreatePolyline(ParseVerticesJson(verticesJson, sr), sr);
+                attributes["SHAPE"] = polyline;
+
+                var op = new EditOperation { Name = "Create polyline feature via MCP" };
+                op.Create(layer, attributes);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Created polyline feature in '{layerName}'.";
+        }
+
+        public static async Task<string> CreatePolygonFeatureAsync(string layerName, string verticesJson, string attributesJson, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var attributes = ParseAttributesJson(attributesJson);
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var sr = layer.GetSpatialReference();
+                var polygon = PolygonBuilderEx.CreatePolygon(ParseVerticesJson(verticesJson, sr), sr);
+                attributes["SHAPE"] = polygon;
+
+                var op = new EditOperation { Name = "Create polygon feature via MCP" };
+                op.Create(layer, attributes);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Created polygon feature in '{layerName}'.";
+        }
+
+        public static async Task<string> UpdatePolylineGeometryAsync(long objectId, string verticesJson, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var sr = layer.GetSpatialReference();
+                var polyline = PolylineBuilderEx.CreatePolyline(ParseVerticesJson(verticesJson, sr), sr);
+
+                var op = new EditOperation { Name = "Update polyline geometry via MCP" };
+                op.Modify(layer, objectId, polyline);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Updated polyline geometry for feature {objectId} in '{layerName}'.";
+        }
+
+        public static async Task<string> UpdatePolygonGeometryAsync(long objectId, string verticesJson, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var sr = layer.GetSpatialReference();
+                var polygon = PolygonBuilderEx.CreatePolygon(ParseVerticesJson(verticesJson, sr), sr);
+
+                var op = new EditOperation { Name = "Update polygon geometry via MCP" };
+                op.Modify(layer, objectId, polygon);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Updated polygon geometry for feature {objectId} in '{layerName}'.";
+        }
+
+        /// <summary>Read-only probe at a point -- unlike select_by_extent, doesn't change the current selection.</summary>
+        public static async Task<string> IdentifyAtPointAsync(double x, double y, double tolerance, string mapName)
+        {
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view == null)
+                throw new InvalidOperationException("No open view found.");
+
+            var summary = await QueuedTask.Run(() =>
+            {
+                var sr = view.Map.SpatialReference;
+                var envelope = EnvelopeBuilderEx.CreateEnvelope(x - tolerance, y - tolerance, x + tolerance, y + tolerance, sr);
+                var result = view.GetFeatures(envelope, true, false).ToDictionary();
+
+                return result.Count == 0
+                    ? "Nothing found at that location."
+                    : string.Join("; ", result.Select(kvp => $"{kvp.Key.Name}: [{string.Join(",", kvp.Value)}]"));
+            });
+
+            return summary;
+        }
+
+        // ---- v3 batches 2-3: the rest of EditOperation's manual-edit toolbox. Several
+        // of these signatures aren't fully confirmed in Esri's own docs -- written as
+        // the best-grounded guess from the confirmed patterns (Layer + oid(s) + geometry,
+        // matching Clip/Split/Explode), correction left to the compiler, which has been
+        // reliable and cheap all session compared to guessing wrong at runtime.
+
+        /// <summary>Moves whatever is currently selected by an offset.</summary>
+        public static async Task<string> MoveFeaturesAsync(double dx, double dy, string mapName)
+        {
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view?.Map == null)
+                throw new InvalidOperationException("No open view found.");
+
+            await QueuedTask.Run(() =>
+            {
+                var selection = view.Map.GetSelection();
+                if (selection.Count == 0)
+                    throw new InvalidOperationException("Nothing is selected. Select features first.");
+
+                var op = new EditOperation { Name = "Move features via MCP" };
+                op.Move(selection, dx, dy);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Moved selected features by ({dx}, {dy}).";
+        }
+
+        /// <summary>Rotates whatever is currently selected around a pivot point, in degrees.</summary>
+        public static async Task<string> RotateFeaturesAsync(double originX, double originY, double angleDegrees, string mapName)
+        {
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view?.Map == null)
+                throw new InvalidOperationException("No open view found.");
+
+            await QueuedTask.Run(() =>
+            {
+                var selection = view.Map.GetSelection();
+                if (selection.Count == 0)
+                    throw new InvalidOperationException("Nothing is selected. Select features first.");
+
+                var origin = MapPointBuilderEx.CreateMapPoint(originX, originY, view.Map.SpatialReference);
+                var op = new EditOperation { Name = "Rotate features via MCP" };
+                op.Rotate(selection, origin, angleDegrees * Math.PI / 180);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Rotated selected features by {angleDegrees} degrees around ({originX}, {originY}).";
+        }
+
+        /// <summary>Scales whatever is currently selected around a pivot point.</summary>
+        public static async Task<string> ScaleFeaturesAsync(double originX, double originY, double scaleX, double scaleY, string mapName)
+        {
+            var view = await ResolveMapViewOnUiThread(mapName);
+            if (view?.Map == null)
+                throw new InvalidOperationException("No open view found.");
+
+            await QueuedTask.Run(() =>
+            {
+                var selection = view.Map.GetSelection();
+                if (selection.Count == 0)
+                    throw new InvalidOperationException("Nothing is selected. Select features first.");
+
+                var origin = MapPointBuilderEx.CreateMapPoint(originX, originY, view.Map.SpatialReference);
+                var op = new EditOperation { Name = "Scale features via MCP" };
+                op.Scale(selection, origin, scaleX, scaleY);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Scaled selected features by ({scaleX}, {scaleY}) around ({originX}, {originY}).";
+        }
+
+        /// <summary>Merges every currently-selected feature in a layer into one.</summary>
+        public static async Task<string> MergeFeaturesAsync(string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var oids = layer.GetSelection().GetObjectIDs();
+                if (oids.Count < 2)
+                    throw new InvalidOperationException("Select at least 2 features in this layer to merge.");
+
+                var op = new EditOperation { Name = "Merge features via MCP" };
+                op.Merge(layer, oids);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Merged selected features in '{layerName}'.";
+        }
+
+        /// <summary>Splits a feature along a cutting line.</summary>
+        public static async Task<string> SplitFeatureAsync(long objectId, string splitLineVerticesJson, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var sr = layer.GetSpatialReference();
+                var splitLine = PolylineBuilderEx.CreatePolyline(ParseVerticesJson(splitLineVerticesJson, sr), sr);
+
+                var op = new EditOperation { Name = "Split feature via MCP" };
+                op.Split(layer, objectId, splitLine);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Split feature {objectId} in '{layerName}'.";
+        }
+
+        /// <summary>Breaks a multipart feature into one feature per part.</summary>
+        public static async Task<string> ExplodeFeatureAsync(long objectId, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var op = new EditOperation { Name = "Explode feature via MCP" };
+                op.Explode(layer, new List<long> { objectId }, true);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Exploded feature {objectId} in '{layerName}' into single-part features.";
+        }
+
+        /// <summary>Clips a feature against a boundary polygon.</summary>
+        public static async Task<string> ClipFeatureAsync(long objectId, string clipPolygonVerticesJson, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var sr = layer.GetSpatialReference();
+                var clipPolygon = PolygonBuilderEx.CreatePolygon(ParseVerticesJson(clipPolygonVerticesJson, sr), sr);
+
+                var op = new EditOperation { Name = "Clip feature via MCP" };
+                op.Clip(layer, objectId, clipPolygon, ClipMode.PreserveArea);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Clipped feature {objectId} in '{layerName}'.";
+        }
+
+        /// <summary>Reshapes part of a feature's geometry using a cutting line.</summary>
+        public static async Task<string> ReshapeFeatureAsync(long objectId, string reshapeLineVerticesJson, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var sr = layer.GetSpatialReference();
+                var reshapeLine = PolylineBuilderEx.CreatePolyline(ParseVerticesJson(reshapeLineVerticesJson, sr), sr);
+
+                var op = new EditOperation { Name = "Reshape feature via MCP" };
+                op.Reshape(layer, objectId, reshapeLine);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Reshaped feature {objectId} in '{layerName}'.";
+        }
+
+        /// <summary>Resolves geometry intersections among currently-selected features (e.g. shared vertices where lines cross) -- requires a Standard/Advanced license.</summary>
+        public static async Task<string> PlanarizeFeaturesAsync(string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var oids = layer.GetSelection().GetObjectIDs();
+                if (oids.Count == 0)
+                    throw new InvalidOperationException("Nothing is selected in this layer.");
+
+                var op = new EditOperation { Name = "Planarize features via MCP" };
+                op.Planarize(layer, oids);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Planarized selected features in '{layerName}'.";
+        }
+
+        /// <summary>Changes a feature's subtype classification.</summary>
+        public static async Task<string> ChangeSubtypeAsync(long objectId, int newSubtypeCode, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                // ChangeSubtype lives on Inspector, not EditOperation directly -- load
+                // the feature, change its subtype there, then Modify(inspector).
+                var inspector = new Inspector();
+                inspector.Load(layer, objectId);
+                inspector.ChangeSubtype(newSubtypeCode, true);
+
+                var op = new EditOperation { Name = "Change subtype via MCP" };
+                op.Modify(inspector);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Changed subtype for feature {objectId} in '{layerName}' to {newSubtypeCode}.";
+        }
+
+        /// <summary>Attaches a file (photo, PDF, etc.) to an existing feature.</summary>
+        public static async Task<string> AddAttachmentAsync(long objectId, string filePath, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            filePath = filePath.Replace('/', '\\');
+            if (!File.Exists(filePath))
+                throw new InvalidOperationException($"No file found at '{filePath}'.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var op = new EditOperation { Name = "Add attachment via MCP" };
+                op.AddAttachment(layer, objectId, filePath);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Attached '{filePath}' to feature {objectId} in '{layerName}'.";
         }
     }
 }
