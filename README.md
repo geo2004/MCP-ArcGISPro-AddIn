@@ -30,7 +30,7 @@ equivalent for.
 
 ## Status
 
-✅ **Live and working, 31 tools verified end-to-end.** MCP is hosted directly inside
+✅ **Live and working, 42 tools verified end-to-end.** MCP is hosted directly inside
 the Add-in's own process via the official
 [C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk) — Kestrel listens on
 `http://localhost:5057/`.
@@ -49,6 +49,15 @@ the Add-in's own process via the official
 
 **Application interaction** — also arcpy-unreachable:
 `show_message`, `activate_tool`, `get_current_tool`
+
+**Data editing** — via `EditOperation`, not raw cursor writes, so these participate
+in the same undo/redo stack as everything else here:
+`create_feature`, `update_feature_geometry`, `update_feature_attributes`,
+`delete_feature`, `save_edits`, `discard_edits`. Point geometry only for now.
+
+**Snapping, selection, and tables** — more arcpy-unreachable interactive state:
+`set_snapping`, `get_selected_features` (reads back whatever's selected, including
+selections a human made by clicking), `open_table`, `close_table`, `list_open_tables`
 
 `export_view` in particular is worth knowing about: it renders a view to a PNG file,
 which is the only way to actually see what's on screen in a live ArcGIS Pro
