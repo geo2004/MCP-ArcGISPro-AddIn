@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using ArcGIS.Core.CIM;
 using ArcGIS.Core.Geometry;
 using ArcGIS.Desktop.Core;
+using ArcGIS.Desktop.Editing;
 using ArcGIS.Desktop.Framework;
 using ArcGIS.Desktop.Framework.Contracts;
 using ArcGIS.Desktop.Framework.Threading.Tasks;
@@ -742,6 +745,266 @@ namespace MCPArcGISProAddIn
         {
             var toolId = FrameworkApplication.CurrentTool;
             return Task.FromResult(string.IsNullOrEmpty(toolId) ? "No tool is active." : toolId);
+        }
+
+        // ---- v2: data editing via EditOperation. Genuinely distinct from arcpy's
+        // cursors -- these participate in Pro's own undo/redo stack and edit-session
+        // model (confirmed live already: add_layer showed up as a real undo/redo entry),
+        // not just raw table writes. Point-geometry only for now -- WKT/multi-vertex
+        // geometry parsing from a JSON-RPC string argument is a bigger, separate piece,
+        // deliberately deferred.
+
+        /// <summary>JSON object string, e.g. {"NAME":"foo","COUNT":3} -> Dictionary for EditOperation attribute payloads.</summary>
+        private static Dictionary<string, object> ParseAttributesJson(string attributesJson)
+        {
+            var dict = new Dictionary<string, object>();
+            if (string.IsNullOrWhiteSpace(attributesJson)) return dict;
+
+            using var doc = JsonDocument.Parse(attributesJson);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                dict[prop.Name] = prop.Value.ValueKind switch
+                {
+                    JsonValueKind.String => prop.Value.GetString()!,
+                    JsonValueKind.Number => prop.Value.TryGetInt64(out var l) ? (object)l : prop.Value.GetDouble(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    _ => prop.Value.ToString()
+                };
+            }
+            return dict;
+        }
+
+        /// <summary>Must be called from inside QueuedTask.Run.</summary>
+        private static FeatureLayer? ResolveFeatureLayer(string mapName, string layerName)
+        {
+            var map = ResolveMap(mapName);
+            return map?.GetLayersAsFlattenedList().OfType<FeatureLayer>()
+                .FirstOrDefault(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>Creates a new point feature. Polygon/polyline creation isn't supported yet.</summary>
+        public static async Task<string> CreateFeatureAsync(string layerName, double x, double y, string attributesJson, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var attributes = ParseAttributesJson(attributesJson);
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var point = MapPointBuilderEx.CreateMapPoint(x, y, layer.GetSpatialReference());
+                attributes["SHAPE"] = point;
+
+                var op = new EditOperation { Name = "Create feature via MCP" };
+                op.Create(layer, attributes);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Created point feature in '{layerName}' at ({x}, {y}).";
+        }
+
+        /// <summary>Moves a point feature to a new location.</summary>
+        public static async Task<string> UpdateFeatureGeometryAsync(long objectId, double x, double y, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var point = MapPointBuilderEx.CreateMapPoint(x, y, layer.GetSpatialReference());
+
+                var op = new EditOperation { Name = "Update feature geometry via MCP" };
+                op.Modify(layer, objectId, point);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Moved feature {objectId} in '{layerName}' to ({x}, {y}).";
+        }
+
+        /// <summary>Updates one or more attribute values on a feature, by object id.</summary>
+        public static async Task<string> UpdateFeatureAttributesAsync(long objectId, string attributesJson, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var attributes = ParseAttributesJson(attributesJson);
+            if (attributes.Count == 0)
+                throw new ArgumentException("attributesJson must contain at least one field.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var op = new EditOperation { Name = "Update feature attributes via MCP" };
+                op.Modify(layer, objectId, attributes);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Updated feature {objectId} in '{layerName}'.";
+        }
+
+        /// <summary>Deletes a feature by object id.</summary>
+        public static async Task<string> DeleteFeatureAsync(long objectId, string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            await QueuedTask.Run(() =>
+            {
+                var layer = ResolveFeatureLayer(mapName, layerName)
+                    ?? throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+                var op = new EditOperation { Name = "Delete feature via MCP" };
+                op.Delete(layer, objectId);
+                if (!op.Execute())
+                    throw new InvalidOperationException($"Edit failed: {op.ErrorMessage}");
+            });
+
+            return $"Deleted feature {objectId} from '{layerName}'.";
+        }
+
+        /// <summary>Saves all unsaved data edits -- distinct from save_project, which saves the .aprx itself.</summary>
+        public static async Task<string> SaveEditsAsync()
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            bool saved = await dispatcher.InvokeAsync(() => Project.Current.SaveEditsAsync()).Task.Unwrap();
+
+            return saved ? "Edits saved." : "Nothing to save, or save failed.";
+        }
+
+        /// <summary>Discards all unsaved data edits.</summary>
+        public static async Task<string> DiscardEditsAsync()
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            bool discarded = await dispatcher.InvokeAsync(() => Project.Current.DiscardEditsAsync()).Task.Unwrap();
+
+            return discarded ? "Edits discarded." : "Nothing to discard, or discard failed.";
+        }
+
+        /// <summary>Enables/disables snapping and sets which snap modes are active. Empty snapModes with enabled=true keeps whatever modes were already set.</summary>
+        public static async Task<string> SetSnappingAsync(bool enabled, List<string> snapModes)
+        {
+            await QueuedTask.Run(() =>
+            {
+                Snapping.IsEnabled = enabled;
+
+                if (snapModes.Count > 0)
+                {
+                    var modes = snapModes
+                        .Select(m => Enum.TryParse<SnapMode>(m, ignoreCase: true, out var mode) ? mode : (SnapMode?)null)
+                        .Where(m => m.HasValue)
+                        .Select(m => m!.Value)
+                        .ToList();
+                    Snapping.SetSnapModes(modes);
+                }
+            });
+
+            return $"Snapping {(enabled ? "enabled" : "disabled")}" +
+                   (snapModes.Count > 0 ? $", modes: {string.Join(", ", snapModes)}." : ".");
+        }
+
+        /// <summary>Reads back whatever is currently selected in a view -- including selections a human made by clicking, not just ones this add-in made.</summary>
+        public static async Task<string> GetSelectedFeaturesAsync(string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var summary = await QueuedTask.Run(() =>
+            {
+                var map = ResolveMap(mapName);
+                if (map == null) return null;
+
+                var selection = map.GetSelection();
+                return selection.Count == 0
+                    ? "Nothing is selected."
+                    : string.Join("; ", selection.ToDictionary()
+                        .Select(kvp => $"{kvp.Key.Name}: [{string.Join(",", kvp.Value)}]"));
+            });
+
+            if (summary == null)
+                throw new InvalidOperationException("No map found.");
+
+            return summary;
+        }
+
+        /// <summary>Opens a live attribute table pane for a layer -- another live-window-only capability, arcpy has no window to open at all.</summary>
+        public static async Task<string> OpenTableAsync(string layerName, string mapName)
+        {
+            if (Project.Current == null)
+                throw new InvalidOperationException("No project is open.");
+
+            var layer = await QueuedTask.Run(() => (MapMember?)ResolveFeatureLayer(mapName, layerName));
+            if (layer == null)
+                throw new InvalidOperationException($"No layer named '{layerName}' found.");
+
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            await dispatcher.InvokeAsync(() => FrameworkApplication.Panes.OpenTablePane(layer, TableViewMode.eAllRecords));
+
+            return $"Opened attribute table for '{layerName}'.";
+        }
+
+        /// <summary>Closes the open attribute table pane for a layer.</summary>
+        public static async Task<string> CloseTableAsync(string layerName)
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            var closed = await dispatcher.InvokeAsync(() =>
+            {
+                var pane = FrameworkApplication.Panes.OfType<ITablePane>()
+                    .FirstOrDefault(p => p.MapMember?.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase) == true);
+                if (pane == null) return false;
+                ((Pane)pane).Close();
+                return true;
+            });
+
+            if (!closed)
+                throw new InvalidOperationException($"No open attribute table found for '{layerName}'.");
+
+            return $"Closed attribute table for '{layerName}'.";
+        }
+
+        /// <summary>Lists every currently open attribute table pane.</summary>
+        public static async Task<string> ListOpenTablesAsync()
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                throw new InvalidOperationException("No WPF dispatcher available (unexpected outside ArcGIS Pro).");
+
+            var names = await dispatcher.InvokeAsync(() =>
+                FrameworkApplication.Panes.OfType<ITablePane>()
+                    .Select(p => p.MapMember?.Name)
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .ToList());
+
+            return names.Count > 0 ? string.Join(", ", names) : "No attribute tables are currently open.";
         }
     }
 }

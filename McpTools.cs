@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading.Tasks;
 using ModelContextProtocol.Server;
@@ -254,5 +255,99 @@ namespace MCPArcGISProAddIn
         [McpServerTool]
         [Description("Get the currently active Pro tool/command's DAML id.")]
         public static Task<string> GetCurrentTool() => RunLogged(ArcGisOperations.GetCurrentToolAsync, nameof(GetCurrentTool));
+
+        // ---- v2: data editing via EditOperation -- genuinely distinct from arcpy's
+        // cursors since these participate in Pro's own undo/redo stack. Point geometry
+        // only for now.
+
+        [McpServerTool]
+        [Description("Create a new point feature in a layer with the given attributes.")]
+        public static Task<string> CreateFeature(
+            [Description("Exact layer name to create the feature in.")]
+            string layerName,
+            double x, double y,
+            [Description("JSON object of field values, e.g. {\"NAME\":\"foo\",\"COUNT\":3}. Empty for no attributes.")]
+            string attributesJson = "",
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.CreateFeatureAsync(layerName, x, y, attributesJson, mapName), nameof(CreateFeature));
+
+        [McpServerTool]
+        [Description("Move a point feature to a new location.")]
+        public static Task<string> UpdateFeatureGeometry(
+            [Description("Object ID of the feature to move.")]
+            long objectId,
+            double x, double y,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.UpdateFeatureGeometryAsync(objectId, x, y, layerName, mapName), nameof(UpdateFeatureGeometry));
+
+        [McpServerTool]
+        [Description("Update one or more attribute values on a feature. Get the object id from get_selected_features.")]
+        public static Task<string> UpdateFeatureAttributes(
+            [Description("Object ID of the feature to update.")]
+            long objectId,
+            [Description("JSON object of field values to change, e.g. {\"NAME\":\"fixed\"}.")]
+            string attributesJson,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.UpdateFeatureAttributesAsync(objectId, attributesJson, layerName, mapName), nameof(UpdateFeatureAttributes));
+
+        [McpServerTool]
+        [Description("Delete a feature by object id.")]
+        public static Task<string> DeleteFeature(
+            long objectId,
+            [Description("Exact layer name the feature belongs to.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.DeleteFeatureAsync(objectId, layerName, mapName), nameof(DeleteFeature));
+
+        [McpServerTool]
+        [Description("Save all unsaved data edits. Distinct from save_project, which saves the .aprx itself.")]
+        public static Task<string> SaveEdits() => RunLogged(ArcGisOperations.SaveEditsAsync, nameof(SaveEdits));
+
+        [McpServerTool]
+        [Description("Discard all unsaved data edits.")]
+        public static Task<string> DiscardEdits() => RunLogged(ArcGisOperations.DiscardEditsAsync, nameof(DiscardEdits));
+
+        [McpServerTool]
+        [Description("Enable/disable snapping and set which snap modes are active (e.g. Vertex, Edge, Endpoint). arcpy has no interactive cursor, so no concept of this at all.")]
+        public static Task<string> SetSnapping(
+            bool enabled,
+            [Description("Snap mode names, e.g. [\"Vertex\", \"Edge\"]. Leave empty to just toggle enabled without changing modes.")]
+            List<string>? snapModes = null)
+            => RunLogged(() => ArcGisOperations.SetSnappingAsync(enabled, snapModes ?? new List<string>()), nameof(SetSnapping));
+
+        [McpServerTool]
+        [Description("Read back whatever is currently selected in a view, including selections a human made by clicking.")]
+        public static Task<string> GetSelectedFeatures(
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.GetSelectedFeaturesAsync(mapName), nameof(GetSelectedFeatures));
+
+        [McpServerTool]
+        [Description("Open a live attribute table pane for a layer.")]
+        public static Task<string> OpenTable(
+            [Description("Exact layer name.")]
+            string layerName,
+            [Description("Exact map name, or empty for the active view.")]
+            string mapName = "")
+            => RunLogged(() => ArcGisOperations.OpenTableAsync(layerName, mapName), nameof(OpenTable));
+
+        [McpServerTool]
+        [Description("Close the open attribute table pane for a layer.")]
+        public static Task<string> CloseTable(
+            [Description("Exact layer name.")]
+            string layerName)
+            => RunLogged(() => ArcGisOperations.CloseTableAsync(layerName), nameof(CloseTable));
+
+        [McpServerTool]
+        [Description("List every currently open attribute table pane.")]
+        public static Task<string> ListOpenTables() => RunLogged(ArcGisOperations.ListOpenTablesAsync, nameof(ListOpenTables));
     }
 }
